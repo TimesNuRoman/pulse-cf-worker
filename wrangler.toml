@@ -1,0 +1,31 @@
+name = "pulse-cf-worker"
+compatibility_date = "2026-08-01"
+compatibility_flags = ["nodejs_compat"]
+workers_dev = false
+main = "src/worker.ts"
+
+# Workers Static Assets — modern path (Workers Sites is deprecated for new projects).
+# Wrangler uploads ../pulse-landing/dist at deploy time; Cloudflare serves it directly
+# with html_handling=auto-trailing-slash so /pricing/ resolves to pricing/index.html.
+#
+# R257: the custom fetch handler in src/worker.ts intercepts /api/* paths and
+# forwards everything else to env.ASSETS.fetch(req). The ASSETS binding is
+# auto-generated from the [[assets]] config below.
+[assets]
+directory = "../pulse-landing/dist"
+html_handling = "auto-trailing-slash"
+not_found_handling = "404-page"
+
+# D1 binding for auth tables (users, sessions, email_verifications, attempts).
+# See migrations/0001_initial.sql for the schema.
+[[d1_databases]]
+binding = "DB"
+database_name = "pulse-auth"
+database_id = "33f8661a-7aa2-42ac-b812-53657054eaa1"
+
+# Secrets (set via `wrangler secret put`):
+#   RESEND_API_KEY  — Resend transactional email API key
+#   FROM_EMAIL      — e.g. "Pulse <noreply@ownlocalml.com>"
+#   PUBLIC_APP_URL  — e.g. "https://ownlocalml.com" (used in verification links)
+# Optional:
+#   DEV_LOG_EMAIL   — set to "1" to log emails to console instead of calling Resend

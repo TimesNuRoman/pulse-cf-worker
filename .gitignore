@@ -1,0 +1,19 @@
+# R257: pulse-cf-worker .gitignore
+# Local Wrangler state (D1 local DB, build cache).
+.wrangler/
+.dev.vars
+.dev.vars.*
+# D1 local SQLite (auto-created on `wrangler dev --local`).
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+# Test outputs.
+dist/
+# node_modules.
+node_modules/
+# Editor / OS noise.
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.log

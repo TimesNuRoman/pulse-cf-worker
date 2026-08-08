@@ -1,0 +1,14 @@
+{
+  "name": "pulse-cf-worker",
+  "version": "0.1.0",
+  "private": true,
+  "description": "CF Worker front for Pulse site (R2 static-site routing on ownlocalml.com)",
+  "scripts": {
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260808.1",
+    "typescript": "5.6",
+    "wrangler": "^4.118.0"
+  }
+}
