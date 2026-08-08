@@ -54,8 +54,10 @@ export async function handleApi(
 		return json({ error: 'not_found' }, 404, request);
 	} catch (err) {
 		// Don't leak internal error details; log them server-side.
-		console.error('API error', { path, method, err });
-		return json({ error: 'server_error' }, 500, request);
+		const message = err instanceof Error ? err.message : String(err);
+		const stack = err instanceof Error ? err.stack : undefined;
+		console.error('API error', { path, method, message, stack });
+		return json({ error: 'server_error', message }, 500, request);
 	}
 }
 
