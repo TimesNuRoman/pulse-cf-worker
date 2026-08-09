@@ -42,7 +42,23 @@ export default {
 		}
 
 		// 4. Static assets
-		return env.ASSETS.fetch(request);
+		const assetResp = await env.ASSETS.fetch(request);
+		// R266: HTML responses must revalidate on every request, otherwise
+		// the browser keeps the pre-deploy copy and ViewTransitions swaps
+		// in stale <head> + <body> (reveal scripts, single-CTA markup,
+		// etc.). Hashed assets under /_astro/ keep their long max-age.
+		if (assetResp.status === 200 && url.pathname.endsWith('.html')) {
+			const h = new Headers(assetResp.headers);
+			h.set('cache-control', 'public, max-age=0, must-revalidate');
+			return new Response(assetResp.body, { status: assetResp.status, headers: h });
+		}
+		// Bare paths (no extension) also serve HTML via auto-trailing-slash.
+		if (assetResp.status === 200 && !/\.[a-z0-9]+$/i.test(url.pathname)) {
+			const h = new Headers(assetResp.headers);
+			h.set('cache-control', 'public, max-age=0, must-revalidate');
+			return new Response(assetResp.body, { status: assetResp.status, headers: h });
+		}
+		return assetResp;
 	},
 } satisfies ExportedHandler<Env>;
 
