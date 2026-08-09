@@ -134,7 +134,36 @@ export function buildEmailChangeConfirm(newEmail: string, confirmUrl: string): E
     <p style="margin:24px 0 0;font-size:0.85rem;color:#9aa5ce;">Or paste this link into your browser:</p>
     <p style="margin:0;font-family:ui-monospace,monospace;font-size:0.78rem;color:#7dcfff;word-break:break-all;">${confirmUrl}</p>
     <p style="margin:32px 0 0;font-size:0.85rem;color:#9aa5ce;">If this wasn't you, ignore this email. Your current email stays active.</p>
-    <p style="margin:16px 0 0;font-size:0.85rem;color:#9aa5ce;">— Pulse team</p>
+    <p style="margin:16px 0 0;font-size:0.85rem;color:#9aa5ce;">- Pulse team</p>
+  </div>
+</body></html>`;
+
+	return { to: '', subject, html, text };
+}
+
+// R260: password changed notification.
+export function buildPasswordChanged(name: string, when: string): EmailMessage {
+	const subject = 'Your Pulse password was changed';
+	const text = [
+		`Hi ${name},`,
+		'',
+		`Your Pulse account password was changed at ${when}.`,
+		`All other devices have been signed out and will need to re-authenticate.`,
+		'',
+		`If this wasn't you, secure your account immediately at https://pulse.app/account/`,
+		'',
+		`- Pulse team`,
+	].join('\n');
+
+	const html = `<!doctype html>
+<html><body style="background:#1a1b26;color:#c0caf5;font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,sans-serif;padding:32px 20px;margin:0;">
+  <div style="max-width:480px;margin:0 auto;background:#24283b;border:1px solid #2f334d;padding:32px;">
+    <h1 style="font-size:1.4rem;margin:0 0 16px;color:#c0caf5;">Your Pulse password was changed</h1>
+    <p style="margin:0 0 12px;line-height:1.6;">Hi ${escapeHtml(name)},</p>
+    <p style="margin:0 0 16px;line-height:1.6;">Your Pulse account password was changed at <strong>${escapeHtml(when)}</strong>.</p>
+    <p style="margin:0 0 16px;line-height:1.6;">All other devices have been signed out and will need to re-authenticate.</p>
+    <p style="margin:0 0 16px;line-height:1.6;color:#9aa5ce;">If this wasn't you, secure your account immediately at <a href="https://pulse.app/account/" style="color:#7aa2f7;">pulse.app/account/</a>.</p>
+    <p style="margin:16px 0 0;font-size:0.85rem;color:#9aa5ce;">- Pulse team</p>
   </div>
 </body></html>`;
 

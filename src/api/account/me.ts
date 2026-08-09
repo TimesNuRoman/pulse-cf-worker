@@ -7,6 +7,7 @@ import { getSession } from '../lib/session';
 import { isValidEmail } from '../lib/password';
 import { sendEmail, buildEmailChangeConfirm } from '../lib/email';
 import { randomToken, hashToken } from '../lib/tokens';
+import { log } from '../lib/logger';
 
 function clientIp(request: Request): string {
 	return request.headers.get('CF-Connecting-IP') ?? 'unknown';
@@ -43,9 +44,10 @@ async function requireUser(request: Request, env: Env): Promise<{ id: string; em
 }
 
 // GET /api/account/me
-export async function handleAccountMe(request: Request, env: Env, _requestId?: string, _ip?: string): Promise<Response> {
+export async function handleAccountMe(request: Request, env: Env, requestId?: string, ip?: string): Promise<Response> {
 	const user = await requireUser(request, env);
 	if (!user) return jsonResp({ error: 'unauthorized' }, 401);
+	if (requestId) log.info('account_me', { requestId, ip: ip ?? 'unknown', userId: user.id });
 	return jsonResp({
 		id: user.id,
 		email: user.email,
@@ -61,7 +63,7 @@ interface ProfilePatch {
 }
 
 // PATCH /api/account/profile
-export async function handleAccountProfile(request: Request, env: Env, _requestId?: string, _ip?: string): Promise<Response> {
+export async function handleAccountProfile(request: Request, env: Env, requestId?: string, ip?: string): Promise<Response> {
 	const user = await requireUser(request, env);
 	if (!user) return jsonResp({ error: 'unauthorized' }, 401);
 
@@ -139,6 +141,8 @@ export async function handleAccountProfile(request: Request, env: Env, _requestI
 		tmpl.to = pendingEmail;
 		await sendEmail(env, tmpl);
 	}
+
+	if (requestId) log.info('account_profile_updated', { requestId, ip: ip ?? 'unknown', userId: user.id, emailChanged });
 
 	const updated = await env.DB.prepare(
 		`SELECT id, email, name, email_verified, created_at FROM users WHERE id = ? LIMIT 1`,

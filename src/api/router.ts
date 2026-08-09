@@ -17,6 +17,7 @@ import { handleLogin } from './auth/login';
 import { handleLogout } from './auth/logout';
 import { handleResend } from './auth/resend';
 import { handleAccountMe, handleAccountProfile } from './account/me';
+import { handleAccountPassword } from './account/password';
 import { handleLicenseValidate, handleLicenseClaim, handleLicenseStatus } from './auth/license';
 import { handlePolarWebhook } from './polar/webhook';
 import { log, newRequestId } from './lib/logger';
@@ -143,6 +144,8 @@ export async function handleApi(
 			response = await handleAccountMe(request, env, requestId, ip);
 		} else if (path === '/api/account/profile' && method === 'PATCH') {
 			response = await handleAccountProfile(request, env, requestId, ip);
+		} else if (path === '/api/account/password' && method === 'POST') {
+			response = await handleAccountPassword(request, env, requestId, ip);
 		} else if (path === '/api/polar/webhook' && method === 'POST') {
 			response = await handlePolarWebhook(request, env, requestId, ip);
 		} else {
