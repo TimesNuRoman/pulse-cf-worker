@@ -18,6 +18,7 @@ import { handleLogout } from './auth/logout';
 import { handleResend } from './auth/resend';
 import { handleAccountMe, handleAccountProfile } from './account/me';
 import { handleAccountPassword } from './account/password';
+import { handleAccountSessionsList, handleAccountSessionRevoke } from './account/sessions';
 import { handleLicenseValidate, handleLicenseClaim, handleLicenseStatus } from './auth/license';
 import { handlePolarWebhook } from './polar/webhook';
 import { log, newRequestId } from './lib/logger';
@@ -146,6 +147,16 @@ export async function handleApi(
 			response = await handleAccountProfile(request, env, requestId, ip);
 		} else if (path === '/api/account/password' && method === 'POST') {
 			response = await handleAccountPassword(request, env, requestId, ip);
+		} else if (path === '/api/account/sessions' && method === 'GET') {
+			response = await handleAccountSessionsList(request, env, requestId, ip);
+		} else if (path.startsWith('/api/account/sessions/') && method === 'DELETE') {
+			// Path: /api/account/sessions/<id_hash>
+			const id = decodeURIComponent(path.slice('/api/account/sessions/'.length));
+			if (!id) {
+				response = json({ error: 'missing_session_id' }, 400, request);
+			} else {
+				response = await handleAccountSessionRevoke(request, env, id, requestId, ip);
+			}
 		} else if (path === '/api/polar/webhook' && method === 'POST') {
 			response = await handlePolarWebhook(request, env, requestId, ip);
 		} else {

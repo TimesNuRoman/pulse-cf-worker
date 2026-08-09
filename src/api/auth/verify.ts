@@ -64,7 +64,7 @@ export async function handleVerify(request: Request, env: Env, requestId: string
 	await env.DB.prepare(`DELETE FROM email_verifications WHERE token_hash = ?`).bind(tokenHash).run();
 
 	// 4. Issue session cookie.
-	const session = await createSession(env, row.user_id);
+	const session = await createSession(env, row.user_id, request);
 	const isHttps = new URL(request.url).protocol === 'https:';
 	const cookie = buildSetCookie(session.id, session.expiresAt, isHttps);
 

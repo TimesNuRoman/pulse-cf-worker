@@ -72,7 +72,7 @@ export async function handleLogin(request: Request, env: Env, requestId: string,
 	}
 
 	// 6. Issue session.
-	const session = await createSession(env, user.id);
+	const session = await createSession(env, user.id, request);
 	const isHttps = new URL(request.url).protocol === 'https:';
 	const cookie = buildSetCookie(session.id, session.expiresAt, isHttps);
 
