@@ -1,17 +1,17 @@
-// R257: POST /api/auth/login — email + password, returns session cookie.
+// R257 + R260: POST /api/auth/login — email + password, returns session cookie.
+//
+// Security: returns generic 401 for both wrong-password and unverified-email
+// to prevent email enumeration. Verification status is logged server-side.
 
 import type { Env } from '../../worker';
 import { verifyPassword } from '../lib/password';
 import { createSession, buildSetCookie } from '../lib/session';
 import { checkFailedLogin, recordLoginAttempt } from '../lib/rate-limit';
+import { log } from '../lib/logger';
 
 interface LoginBody {
 	email?: string;
 	password?: string;
-}
-
-function clientIp(request: Request): string {
-	return request.headers.get('CF-Connecting-IP') ?? 'unknown';
 }
 
 function jsonResp(body: unknown, status: number, extraHeaders: Record<string, string> = {}): Response {
@@ -25,9 +25,7 @@ function jsonResp(body: unknown, status: number, extraHeaders: Record<string, st
 	});
 }
 
-export async function handleLogin(request: Request, env: Env): Promise<Response> {
-	const ip = clientIp(request);
-
+export async function handleLogin(request: Request, env: Env, requestId: string, ip: string): Promise<Response> {
 	// 1. Rate limit (per IP — failed attempts).
 	const limit = await checkFailedLogin(env, ip);
 	if (!limit.allowed) {
@@ -66,9 +64,11 @@ export async function handleLogin(request: Request, env: Env): Promise<Response>
 		return jsonResp({ error: 'invalid_credentials' }, 401);
 	}
 
-	// 5. Block login if not verified.
+	// 5. Block login if not verified — but return SAME generic 401 to prevent enumeration.
 	if (user.email_verified === 0) {
-		return jsonResp({ error: 'email_not_verified' }, 403);
+		await recordLoginAttempt(env, ip, email, false);
+		log.info('login_unverified_attempt', { requestId, ip, userId: user.id });
+		return jsonResp({ error: 'invalid_credentials' }, 401);
 	}
 
 	// 6. Issue session.
@@ -84,6 +84,7 @@ export async function handleLogin(request: Request, env: Env): Promise<Response>
 		.run();
 
 	await recordLoginAttempt(env, ip, email, true);
+	log.info('login_success', { requestId, ip, userId: user.id });
 
 	return jsonResp({ ok: true }, 200, { 'set-cookie': cookie });
 }

@@ -22,9 +22,23 @@ binding = "DB"
 database_name = "pulse-auth"
 database_id = "33f8661a-7aa2-42ac-b812-53657054eaa1"
 
+# R2 binding for /downloads/* and /updates/* — APK + update manifests.
+# Keep in sync with the custom-domain setup on `ownlocalml.com` (R2 dashboard).
+[[r2_buckets]]
+binding = "PULSE_LANDING"
+bucket_name = "pulse-landing"
+preview_bucket_name = "pulse-landing"
+
 # Secrets (set via `wrangler secret put`):
-#   RESEND_API_KEY  — Resend transactional email API key
-#   FROM_EMAIL      — e.g. "Pulse <noreply@ownlocalml.com>"
-#   PUBLIC_APP_URL  — e.g. "https://ownlocalml.com" (used in verification links)
+#   RESEND_API_KEY      — Resend transactional email API key
+#   FROM_EMAIL          — e.g. "Pulse <noreply@ownlocalml.com>"
+#   PUBLIC_APP_URL      — e.g. "https://ownlocalml.com" (used in verification links)
+#   POLAR_WEBHOOK_SECRET — webhook signing secret from Polar.sh dashboard
 # Optional:
-#   DEV_LOG_EMAIL   — set to "1" to log emails to console instead of calling Resend
+#   DEV_LOG_EMAIL       — set to "1" to log emails to console instead of calling Resend
+#
+# NOTE: in wrangler 4.118 there's a bug where .dev.vars does not inject
+# POLAR_WEBHOOK_SECRET into the runtime env. We put it in [env.dev] for now.
+# For production, set it via `wrangler secret put POLAR_WEBHOOK_SECRET`.
+[env.dev]
+vars = { POLAR_WEBHOOK_SECRET = "whsec_test_local_secret_for_dev_only" }

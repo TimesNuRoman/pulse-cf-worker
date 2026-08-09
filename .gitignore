@@ -11,6 +11,11 @@
 dist/
 # node_modules.
 node_modules/
+# Wrangler dry-run temp.
+.dryrun-out/
+# Stray files from debug runs.
+android-kotlin.json
+android-kotlin.original.json
 # Editor / OS noise.
 .DS_Store
 Thumbs.db

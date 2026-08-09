@@ -1,11 +1,10 @@
-// R257: rate limiting for signup/resend/login.
-// Uses D1 signup_attempts / login_attempts tables. In-memory would not
-// survive across Worker isolates; D1 (eventually-consistent) is fine
-// for our scale (≤5/h per IP is a hard ceiling, not a precise SLA).
+// R257 + R260: rate limiting for signup/resend/login.
+// Uses D1 signup_attempts / resend_attempts / login_attempts tables.
+// D1 is eventually consistent — these are ceilings, not SLAs.
 //
 // Limits from spec §6.3:
 //   - Signup: 5/h per IP, 3/h per email
-//   - Resend: 3 per token TTL (24h) per email
+//   - Resend: 3/24h per email, 10/h per IP (new)
 //   - Failed login: 10/15min per IP
 
 import type { Env } from '../../worker';
@@ -17,6 +16,7 @@ export interface LimitResult {
 
 const HOUR_MS = 60 * 60 * 1000;
 const MIN15_MS = 15 * 60 * 1000;
+const DAY_MS = 24 * HOUR_MS;
 
 export async function checkSignupIp(env: Env, ip: string): Promise<LimitResult> {
 	const since = new Date(Date.now() - HOUR_MS).toISOString();
@@ -43,15 +43,28 @@ export async function checkSignupEmail(env: Env, email: string): Promise<LimitRe
 }
 
 export async function checkResendCount(env: Env, email: string): Promise<LimitResult> {
-	// Count of resend attempts in the last 24h (capped to 3).
-	const since = new Date(Date.now() - 24 * HOUR_MS).toISOString();
+	// 3 resends per 24h per email.
+	const since = new Date(Date.now() - DAY_MS).toISOString();
 	const row = await env.DB.prepare(
-		`SELECT COUNT(*) AS n FROM signup_attempts WHERE lower(email) = lower(?) AND created_at >= ?`,
+		`SELECT COUNT(*) AS n FROM resend_attempts WHERE lower(email) = lower(?) AND created_at >= ?`,
 	)
 		.bind(email, since)
 		.first<{ n: number }>();
 	const n = row?.n ?? 0;
-	if (n >= 3) return { allowed: false, retryAfterSec: 24 * HOUR_MS / 1000 };
+	if (n >= 3) return { allowed: false, retryAfterSec: DAY_MS / 1000 };
+	return { allowed: true };
+}
+
+export async function checkResendIp(env: Env, ip: string): Promise<LimitResult> {
+	// 10 resends per hour per IP — cheap DOS prevention.
+	const since = new Date(Date.now() - HOUR_MS).toISOString();
+	const row = await env.DB.prepare(
+		`SELECT COUNT(*) AS n FROM resend_attempts WHERE ip = ? AND created_at >= ?`,
+	)
+		.bind(ip, since)
+		.first<{ n: number }>();
+	const n = row?.n ?? 0;
+	if (n >= 10) return { allowed: false, retryAfterSec: HOUR_MS / 1000 };
 	return { allowed: true };
 }
 
@@ -70,6 +83,14 @@ export async function checkFailedLogin(env: Env, ip: string): Promise<LimitResul
 export async function recordSignupAttempt(env: Env, ip: string, email: string): Promise<void> {
 	await env.DB.prepare(
 		`INSERT INTO signup_attempts (ip, email) VALUES (?, ?)`,
+	)
+		.bind(ip, email)
+		.run();
+}
+
+export async function recordResendAttempt(env: Env, ip: string, email: string): Promise<void> {
+	await env.DB.prepare(
+		`INSERT INTO resend_attempts (ip, email) VALUES (?, ?)`,
 	)
 		.bind(ip, email)
 		.run();

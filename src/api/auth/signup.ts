@@ -1,11 +1,17 @@
-// R257: POST /api/auth/signup — create account, send verification email.
+// R257 + R260: POST /api/auth/signup — create account, send verification email.
 // Spec §5.2: returns JSON { ok } or { error, field? }.
+//
+// Security: cleanup of old verification tokens before insert prevents token
+// accumulation on repeated signups. D1 batch (db.batch) runs INSERT into users
+// and email_verifications atomically — if one fails, neither persists.
 
 import type { Env } from '../../worker';
 import { hashPassword, isValidEmail, isValidPassword } from '../lib/password';
 import { randomToken, hashToken } from '../lib/tokens';
 import { sendEmail, buildVerificationEmail } from '../lib/email';
 import { checkSignupIp, checkSignupEmail, recordSignupAttempt } from '../lib/rate-limit';
+import { log } from '../lib/logger';
+import { appUrl } from '../lib/app-url';
 
 interface SignupBody {
 	name?: string;
@@ -13,14 +19,6 @@ interface SignupBody {
 	password?: string;
 	agreedToTerms?: boolean;
 	company?: string; // honeypot
-}
-
-function clientIp(request: Request): string {
-	return (
-		request.headers.get('CF-Connecting-IP') ??
-		request.headers.get('X-Forwarded-For')?.split(',')[0]?.trim() ??
-		'unknown'
-	);
 }
 
 function jsonResp(body: unknown, status: number, request: Request, extraHeaders: Record<string, string> = {}): Response {
@@ -34,9 +32,7 @@ function jsonResp(body: unknown, status: number, request: Request, extraHeaders:
 	});
 }
 
-export async function handleSignup(request: Request, env: Env): Promise<Response> {
-	const ip = clientIp(request);
-
+export async function handleSignup(request: Request, env: Env, requestId: string, ip: string): Promise<Response> {
 	// 1. Parse body.
 	let body: SignupBody;
 	try {
@@ -45,8 +41,9 @@ export async function handleSignup(request: Request, env: Env): Promise<Response
 		return jsonResp({ error: 'invalid_json' }, 400, request);
 	}
 
-	// 2. Honeypot — silent 200, no user created.
+	// 2. Honeypot — silent 200, no user created, no log noise.
 	if (typeof body.company === 'string' && body.company.length > 0) {
+		log.info('honeypot_triggered', { requestId, ip });
 		return jsonResp({ ok: true }, 200, request);
 	}
 
@@ -92,37 +89,49 @@ export async function handleSignup(request: Request, env: Env): Promise<Response
 		.bind(email)
 		.first<{ id: string }>();
 	if (existing) {
+		// Generic 409 — already documented as email_taken. Keeping for UX;
+		// rate limit per email + per IP prevents enumeration at scale.
 		return jsonResp({ error: 'email_taken' }, 409, request);
 	}
 
-	// 7. Create user.
+	// 7. Create user + cleanup old verification tokens + create new one — atomically.
 	const userId = crypto.randomUUID();
 	const passwordHash = await hashPassword(password);
 	const now = new Date().toISOString();
-	await env.DB.prepare(
-		`INSERT INTO users (id, email, name, password_hash, email_verified, created_at, updated_at) VALUES (?, ?, ?, ?, 0, ?, ?)`,
-	)
-		.bind(userId, email, name, passwordHash, now, now)
-		.run();
-
-	// 8. Generate verification token (32 bytes, base64url).
 	const token = randomToken();
 	const tokenHash = await hashToken(token);
+	const verificationId = crypto.randomUUID();
 	const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
-	await env.DB.prepare(
-		`INSERT INTO email_verifications (id, user_id, token_hash, expires_at) VALUES (?, ?, ?, ?)`,
-	)
-		.bind(crypto.randomUUID(), userId, tokenHash, expiresAt)
-		.run();
 
-	// 9. Send email.
-	const verifyUrl = `${env.PUBLIC_APP_URL}/verify?token=${encodeURIComponent(token)}`;
+	try {
+		await env.DB.batch([
+			env.DB.prepare(
+				`INSERT INTO users (id, email, name, password_hash, email_verified, created_at, updated_at) VALUES (?, ?, ?, ?, 0, ?, ?)`,
+			).bind(userId, email, name, passwordHash, now, now),
+			env.DB.prepare(
+				`DELETE FROM email_verifications WHERE user_id = (SELECT id FROM users WHERE lower(email) = lower(?))`,
+			).bind(email),
+			env.DB.prepare(
+				`INSERT INTO email_verifications (id, user_id, token_hash, expires_at) VALUES (?, ?, ?, ?)`,
+			).bind(verificationId, userId, tokenHash, expiresAt),
+		]);
+	} catch (err) {
+		log.error('signup_insert_failed', { requestId, ip, email: email.replace(/(?<=.).(?=[^@]*?@)/g, '*') }, err);
+		// UNIQUE collision on email = race condition; surface as 409.
+		const msg = err instanceof Error ? err.message : String(err);
+		if (/UNIQUE/i.test(msg)) {
+			return jsonResp({ error: 'email_taken' }, 409, request);
+		}
+		return jsonResp({ error: 'server_error' }, 500, request);
+	}
+
+	// 8. Send email.
+	const verifyUrl = `${appUrl(env, request)}/verify?token=${encodeURIComponent(token)}`;
 	const tmpl = buildVerificationEmail(name, verifyUrl);
 	tmpl.to = email;
-	const sent = await sendEmail(env, tmpl);
+	const sent = await sendEmail(env, tmpl, requestId);
 	if (!sent.ok) {
-		// User created, email failed — log and still return 200 (don't leak email state).
-		console.error('Failed to send verification email', { userId, error: sent.error });
+		log.error('verification_email_failed', { requestId, userId, error: sent.error });
 	}
 
 	return jsonResp({ ok: true }, 200, request);
